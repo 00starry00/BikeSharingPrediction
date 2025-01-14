@@ -1,7 +1,5 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-
 
 class Autoformer(nn.Module):
     def __init__(self, input_size, output_size, hidden_size=128, num_heads=4, num_layers=2, dropout_rate=0.2):
@@ -35,7 +33,9 @@ class Autoformer(nn.Module):
         Returns:
             output: (batch_size, output_size)
         """
-        batch_size, seq_len, _ = x.size()
+        batch_size, seq_len, num_features = x.size()
+        assert num_features == self.input_embedding.in_features, \
+            f"Input features ({num_features}) do not match expected features ({self.input_embedding.in_features})."
 
         # Input embedding
         x = self.input_embedding(x)

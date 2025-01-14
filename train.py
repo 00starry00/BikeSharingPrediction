@@ -3,24 +3,33 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
+import logging
 from utils.data_loader import load_data
 from models.lstm_model import LSTMModel
 from models.transformer_model import TransformerModel
 from models.tft_model import TemporalFusionTransformer
 from models.autoformer_model import Autoformer
 
+
 def train_model(model_name, train_path, test_path, input_window=96, output_window=96, hidden_size=64, num_layers=2,
-                dropout_rate=0.2, batch_size=32, epochs=50, learning_rate=0.001, num_heads=4, dim_feedforward=128):
+                dropout_rate=0.2, batch_size=32, epochs=20, learning_rate=0.001, num_heads=4, dim_feedforward=128):
     """
     Train the specified model and evaluate with MSE and MAE over 5 runs.
     Save predictions and ground truths for plotting.
     """
+    # Set up logging with dynamic filenames for different models and outputs
+    log_filename = f'training_{model_name.lower()}_output{output_window}.log'
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename=log_filename, filemode='w')
+    logger = logging.getLogger()
+
     mse_scores = []
     mae_scores = []
     final_predictions = []
     final_ground_truths = []
 
     for run in range(5):
+        logger.info(f"Starting run {run + 1}")
+
         X_train, y_train, X_test, y_test, scaler = load_data(train_path, test_path, input_window, output_window)
 
         train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
@@ -46,18 +55,18 @@ def train_model(model_name, train_path, test_path, input_window=96, output_windo
             )
         elif model_name == 'Autoformer':
             model = Autoformer(
-                input_size=input_size,
-                output_size=output_window,
-                hidden_size=hidden_size,
-                num_heads=num_heads,
-                num_layers=num_layers,
-                dropout_rate=dropout_rate
+                input_size=X_train.shape[2],  # 使用实际特征数
+                output_size=output_window,   # 输出序列长度
+                hidden_size=hidden_size,     # 隐藏层大小
+                num_heads=num_heads,         # 多头注意力
+                num_layers=num_layers,       # Transformer 层数
+                dropout_rate=dropout_rate    # Dropout 概率
             )
         else:
             raise ValueError(f"Unsupported model: {model_name}")
 
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print(f"Using device: {device}")
+        logger.info(f"Using device: {device}")
         model.to(device)
 
         optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -77,7 +86,7 @@ def train_model(model_name, train_path, test_path, input_window=96, output_windo
                 optimizer.step()
                 train_loss += loss.item()
 
-            print(f"Run {run + 1}, Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss / len(train_loader):.4f}")
+            logger.info(f"Run {run + 1}, Epoch {epoch + 1}/{epochs}, Train Loss: {train_loss / len(train_loader):.4f}")
 
         model.eval()
         mse_loss = 0.0
@@ -100,7 +109,7 @@ def train_model(model_name, train_path, test_path, input_window=96, output_windo
         final_predictions.append(np.concatenate(run_predictions, axis=0))
         final_ground_truths.append(np.concatenate(run_ground_truths, axis=0))
 
-        print(f"Run {run + 1}, Test MSE: {mse_loss / len(test_loader):.4f}, Test MAE: {mae_loss / len(test_loader):.4f}")
+        logger.info(f"Run {run + 1}, Test MSE: {mse_loss / len(test_loader):.4f}, Test MAE: {mae_loss / len(test_loader):.4f}")
 
     # Average predictions and ground truths across all runs
     final_predictions = np.mean(final_predictions, axis=0)
@@ -110,6 +119,6 @@ def train_model(model_name, train_path, test_path, input_window=96, output_windo
     np.save(f"{model_name.lower()}_final_predictions_output{output_window}.npy", final_predictions)
     np.save(f"{model_name.lower()}_final_ground_truths_output{output_window}.npy", final_ground_truths)
 
-    print(f"Final Results for Output Window {output_window}:")
-    print(f"MSE - Mean: {np.mean(mse_scores):.4f}, Std: {np.std(mse_scores):.4f}")
-    print(f"MAE - Mean: {np.mean(mae_scores):.4f}, Std: {np.std(mae_scores):.4f}")
+    logger.info(f"Final Results for Output Window {output_window}:")
+    logger.info(f"MSE - Mean: {np.mean(mse_scores):.4f}, Std: {np.std(mse_scores):.4f}")
+    logger.info(f"MAE - Mean: {np.mean(mae_scores):.4f}, Std: {np.std(mae_scores):.4f}")
